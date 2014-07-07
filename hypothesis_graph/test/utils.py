@@ -3,7 +3,6 @@
 utils.py - tools for testing Medline data parsing
 """
 from collections import namedtuple
-import random
 import re
 import string
 
@@ -23,7 +22,7 @@ MEDLINE_FILES = [
     'sample_medline_data/medline13n0073.xml',
     'sample_medline_data/medline13n0143.xml',
     'sample_medline_data/medline13n0236.xml',
-    'sample_medline_data/medline13n0363.xml.gz',
+    'sample_medline_data/medline13n0363.xml',
     'sample_medline_data/medline13n0438.xml',
     'sample_medline_data/medline13n0551.xml',
     'sample_medline_data/medline13n0701.xml',
@@ -74,29 +73,38 @@ def process_authors(el, affiliations_el=None):
             'affiliations': affiliations,
             }
 
-KEYWORD_TRANSLATION_TABLE = string.maketrans(
+UNICODE_TRANSLATION_TABLE = dict(
+    (ord(char), None) for char in string.punctuation)
+UNICODE_TRANSLATION_TABLE.update(dict(
+    (ord(s), unicode(s.lower())) for s in string.uppercase))
+
+ASCII_TRANSLATION_TABLE = string.maketrans(
     string.punctuation + string.uppercase,
     ' ' * len(string.punctuation) + string.lower(string.uppercase))
 
 
 def process_keywords(el, set_type):
     # XXX Need to rearrange terms containing commas
+    descriptor_path = 'MeshHeading/DescriptorName[@MajorTopicYN="%s"]'
+    qualifier_path = 'MeshHeading/QualifierName[@MajorTopicYN="%s"]'
+    keyword_path = 'Keyword[@MajorTopicYN="%s"]'
     if set_type == 'MeshHeadingList':
-        major_terms = [string.translate(i.text, KEYWORD_TRANSLATION_TABLE
-                                        ) for i in el.xpath(
-            'MeshHeading/DescriptorName[@MajorTopicYN="Y"]') + el.xpath(
-            'MeshHeading/QualifierName[@MajorTopicYN="Y"]')]
-        minor_terms = [string.translate(i.text, KEYWORD_TRANSLATION_TABLE
-                                        ) for i in el.xpath(
-            'MeshHeading/DescriptorName[@MajorTopicYN="N"]') + el.xpath(
-            'MeshHeading/QualifierName[@MajorTopicYN="N"]')]
+        xpaths = (descriptor_path, qualifier_path)
     elif set_type == 'KeywordList':
-        major_terms = [string.translate(i.text, KEYWORD_TRANSLATION_TABLE
-            ) for i in el.xpath('Keyword[@MajorTopicYN="Y"]')]
-        minor_terms = [string.translate(i.text, KEYWORD_TRANSLATION_TABLE
-            ) for i in el.xpath('Keyword[@MajorTopicYN="N"]')]
-    return {'major_terms': major_terms, 'minor_terms': minor_terms}
+        xpaths = (keyword_path, )
 
+    # Avoiding a list comprehension because we may get differing types
+    # of strings back from our xpath query
+    major_terms, minor_terms = [], []
+    for terms, importance in ((major_terms, 'Y'), (minor_terms, 'N')):
+        for p in xpaths:
+            for i in el.xpath(p % importance):
+                i = i.text
+                if type(i) == type(u''):
+                    terms.append(i.translate(UNICODE_TRANSLATION_TABLE))
+                else:
+                    terms.append(string.translate(i, ASCII_TRANSLATION_TABLE))
+    return {'major_terms': major_terms, 'minor_terms': minor_terms}
 
 # PUBLICATION TYPES
 #
@@ -282,22 +290,6 @@ def process_journal_info(el):
 
 
 # XXX remaining attributes: comments/corrections;
-# to a single text field.
-#
-# A second approach could be keeping track of which articles have which
-# keywords; a keyword match to a search query would then only require
-# pulling a list of already-identified articles. This is better than
-# collapsing into a single text field as it (may) get around the problem of
-# two words being adjacent as an artifact of how I collapsed keywords.
-#
-# Ultimately, I need to test these approaches.
-#
-# PubMed seems to prioritize the abstract's text over keyword matches, though
-# I could use a keyword partial match to limit my FTS. Let's try this and
-# see what happens.
-#
-# An immediate problem is that a germane article with incomplete tagging might
-# be ignored; this could be problematic with earlier publications
 #
 # Could also use citation list from PMC articles... This really only becomes
 # interesting when an author could cite a set of related articles but
@@ -307,7 +299,8 @@ def test_parse(medline_xml):
     """
     Populate database
     """
-    tree = etree.parse(medline_xml)
+    parser = etree.XMLParser(encoding='utf-8')
+    tree = etree.parse(medline_xml, parser=parser)
     for citation in tree.iter(tag='MedlineCitation'):
         all_tags = [c.tag for c in citation.getchildren()]
         pmc = citation.xpath("string(OtherID[@Source='NLM'])") or None
