@@ -31,7 +31,7 @@ class PublicationTypeException(Exception):
 
 # XXX Need to update this to look for each author's affiliation
 # with the 2014 DTD
-def process_authors(el, affiliations_el=None):
+def _process_authors(el, affiliations_el=None):
     """
 
     """
@@ -58,7 +58,7 @@ def process_authors(el, affiliations_el=None):
             }
 
 
-def process_keywords(el, set_type):
+def _process_keywords(el, set_type):
     # XXX Need to rearrange terms containing commas
     descriptor_path = 'MeshHeading/DescriptorName[@MajorTopicYN="%s"]'
     qualifier_path = 'MeshHeading/QualifierName[@MajorTopicYN="%s"]'
@@ -135,7 +135,7 @@ EXCLUDED_PUBLICATION_TYPES = {
     }
 
 
-def process_article(el):
+def _process_article(el):
     """
     Processes the Article element within NLM records
     (http://www.nlm.nih.gov/bsd/licensee/elements_descriptions.html#article)
@@ -162,7 +162,7 @@ def process_article(el):
             'publication_types': publication_types}
 
 
-def date_string_from_element(el):
+def _date_string_from_element(el):
     """
     Given an XML element with children Year, Month and Day, returns
     a YYYY-MM-DD string.
@@ -185,7 +185,7 @@ for names in (_SHORT_MONTH_NAMES, _LONG_MONTH_NAMES):
 YEAR_RE_PATTERN = re.compile('\d{4}')
 
 
-def process_journal_info(el):
+def _process_journal_info(el):
     """
     Process the Journal element within NLM Article elements.
     (http://www.nlm.nih.gov/bsd/licensee/elements_descriptions.html#journal)
@@ -255,7 +255,7 @@ def process_journal_info(el):
 # interesting when an author could cite a set of related articles but
 # only chooses to cite a subset. This could be especially interesting for
 # a review in PMC.
-def test_parse(medline_xml):
+def parse_medline_xml_file(medline_xml):
     """
     Parse target information from file `medline_xml`
     """
@@ -270,17 +270,17 @@ def test_parse(medline_xml):
             # TODO Need to indicate the temporary inavailability somehow...
             pmc = pmc.split()[0]
         try:
-            article_info = process_article(citation.xpath('Article'))
+            article_info = _process_article(citation.xpath('Article'))
         except PublicationTypeException:
             continue
         pmid = int(citation.xpath('string(PMID)'))
         pmid_version = int(citation.xpath('string(PMID/@Version)'))
         for date in ('DateCreated', 'DateCompleted', 'DateRevised'):
             if date in all_tags:
-                record_modification_date = date_string_from_element(citation.xpath(date)[0])
-        journal_info = process_journal_info(citation.xpath('Article/Journal'))
+                record_modification_date = _date_string_from_element(citation.xpath(date)[0])
+        journal_info = _process_journal_info(citation.xpath('Article/Journal'))
         try:
-            author_info = process_authors(
+            author_info = _process_authors(
                 citation.xpath('Article/AuthorList'),
                 # This function needs to change w/ 2014 DTD
                 affiliations_el=citation.xpath('Article/Affiliation'))
@@ -289,7 +289,7 @@ def test_parse(medline_xml):
         for keyword_set in citation.xpath(
                 'KeywordList') + citation.xpath('MeshHeadingList'):
             # Will only keep one of the two sets of keywords if both exist
-            keywords = process_keywords(keyword_set, set_type=keyword_set.tag)
+            keywords = _process_keywords(keyword_set, set_type=keyword_set.tag)
         # TODO take comments/corrections into consideration
     return {'article': article_info,
             'pmid': {'id': pmid, 'version': pmid_version},
