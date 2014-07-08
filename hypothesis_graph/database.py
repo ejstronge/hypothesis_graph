@@ -3,9 +3,9 @@
 db.py - Retrieve and persist Medline records
 """
 import sqlalchemy
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship, sessionmaker, backref
 # Not going to use this here but may need it in an importing module
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from sqlalchemy.schema import UniqueConstraint
@@ -14,14 +14,20 @@ from sqlalchemy.types import Date
 
 Base = declarative_base()
 
-DB_LOCATION = 'sqlite:////home/roi/work/script/hscrb_arlotta/data_retrieval/ISH/data/'\
-    'img_availability.db'
+DB_LOCATION = 'test.db'
 Engine = sqlalchemy.create_engine(DB_LOCATION, echo=False)
 Session = sessionmaker(bind=Engine)
 
 
 def create_all_tables():
     Base.metadata.create_all(Engine)
+
+
+article_authors = Table(
+    'article_authors', Base.metadata,
+    Column('article_id', Integer, ForeignKey('article.id')),
+    Column('author_id', Integer, ForeignKey('author.id')),
+    )
 
 
 class Article(Base):
@@ -34,14 +40,17 @@ class Article(Base):
     pmc_id = Column(Integer)
     title = Column(String, nullable=False)
     abstract = Column(String)
-    # XXX many-to-many
-    authors = Column(String, ForeignKey('author.id'))
     journal = Column(String, nullable=False)
     pub_date = Column(Date, nullable=False)
     types = Column(Integer, ForeignKey('article_type.id'))
     key_terms = Column(String)
 
-    article_types = relationship('article_type')
+    # articles <- -> authors
+    authors = relationship(
+        'Author', secondary=article_authors,
+        backref=backref('articles', lazy='dynamic'))
+
+    article_types = relationship('ArticleType')
 
 
 class ArticleType(Base):
