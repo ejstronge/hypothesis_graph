@@ -193,18 +193,11 @@ def _process_journal_info(el):
     assert len(el) == 1  # We only expect one journal record per article
     el = el[0]
 
-    all_tags = [c.tag for c in el.getchildren()]
     title = el.xpath('string(Title)')
     abbreviation = el.xpath('string(ISOAbbreviation)')
-    if 'ISSN' in all_tags:
-        issn_el = el.xpath('ISSN')[0]
-        # XXX Some journals will have an NlmUniqueID; should use this when
-        # available.
-        issn = issn_el.text
-        issn_type = issn_el.get('IssnType')
-    else:
-        issn = None
-        issn_type = 'Undetermined'
+    # Some journals will have an NlmUniqueID and no ISSN. In every case where
+    # an NlmUniqueID is present it will be used instead of the ISSN
+    issn = el.xpath('string(ISSN)') or None
     # Date parsing should be interesting - there's no guarantee on what
     # fields will be present so I may need to do some ugly stuff
     pub_date_el = el.xpath('JournalIssue/PubDate')[0]
@@ -243,8 +236,8 @@ def _process_journal_info(el):
 
     return {'title': title,
             'abbreviation': abbreviation,
-            'issn': issn,
-            'issn_type': issn_type,
+            'id': issn,
+            'id_type': 'issn',
             'pub_date': final_pub_date,
             }
 
@@ -263,22 +256,34 @@ def parse_medline_xml_file(medline_xml):
     tree = etree.parse(medline_xml, parser=parser)
     for citation in tree.iter(tag='MedlineCitation'):
         all_tags = [c.tag for c in citation.getchildren()]
+
+        # Article identifiers
         pmc = citation.xpath("string(OtherID[@Source='NLM'])") or None
+        pmid = int(citation.xpath('string(PMID)'))
+        pmid_version = int(citation.xpath('string(PMID/@Version)'))
         if pmc is not None and 'Available on' in pmc:
             # Record isn't yet accessible. See
             # http://www.nlm.nih.gov/bsd/licensee/elements_descriptions.html#otherid
             # TODO Need to indicate the temporary inavailability somehow...
             pmc = pmc.split()[0]
+
+        # Article information
         try:
             article_info = _process_article(citation.xpath('Article'))
         except PublicationTypeException:
             continue
-        pmid = int(citation.xpath('string(PMID)'))
-        pmid_version = int(citation.xpath('string(PMID/@Version)'))
         for date in ('DateCreated', 'DateCompleted', 'DateRevised'):
             if date in all_tags:
                 record_modification_date = _date_string_from_element(citation.xpath(date)[0])
+
+        # Journal information
         journal_info = _process_journal_info(citation.xpath('Article/Journal'))
+        if 'MedlineJournalInfo' in all_tags:
+            journal_info['id'] = citation.xpath('string(MedlineJournalInfo/NlmUniqueID)')
+            journal_info['id_type'] = 'NlmUniqueID'
+
+        # Author names - note we're only interested in publications with at
+        # least two authors
         try:
             author_info = _process_authors(
                 citation.xpath('Article/AuthorList'),
@@ -286,14 +291,19 @@ def parse_medline_xml_file(medline_xml):
                 affiliations_el=citation.xpath('Article/Affiliation'))
         except AuthorCountException:
             continue
+
+        # Keywords
+        # Many records have two sets of keywords; I'll only keep once since
+        # the two sets often have terms in common, which could unduly
+        # influence search results
         for keyword_set in citation.xpath(
                 'KeywordList') + citation.xpath('MeshHeadingList'):
-            # Will only keep one of the two sets of keywords if both exist
             keywords = _process_keywords(keyword_set, set_type=keyword_set.tag)
+
         # TODO take comments/corrections into consideration
-    return {'article': article_info,
-            'pmid': {'id': pmid, 'version': pmid_version},
-            'modification_date': record_modification_date,
-            'journal': journal_info,
-            'author': author_info,
-            'keywords': keywords}
+        yield {'article': article_info,
+               'pmid': {'id': pmid, 'version': pmid_version},
+               'modification_date': record_modification_date,
+               'journal': journal_info,
+               'author': author_info,
+               'keywords': keywords}
