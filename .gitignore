@@ -1,0 +1,16 @@
+
+# Python
+*.pyc
+
+# Secrets
+secrets/*
+*.csv
+
+# Configuration and build directories
+.vagrant
+*.log
+build
+bin
+include
+lib
+local
