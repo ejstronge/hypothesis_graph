@@ -1,4 +1,5 @@
 # Puppet will install and/or update pip packages listed here
+wsgiref==0.1.2
 Flask==0.10.1
 Jinja2==2.7.3
 MarkupSafe==0.23
@@ -16,4 +17,4 @@ pyparsing==2.0.2
 python-dateutil==2.2
 six==1.7.3
 tornado==3.2.2
-wsgiref==0.1.2
+psycopg2==2.5.3
