@@ -302,6 +302,7 @@ def parse_medline_xml_file(medline_xml):
 
         # TODO take comments/corrections into consideration
         yield {'article': article_info,
+               'pmcid': pmc,
                'pmid': {'id': pmid, 'version': pmid_version},
                'modification_date': record_modification_date,
                'journal': journal_info,
