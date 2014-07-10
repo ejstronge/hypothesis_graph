@@ -10,7 +10,8 @@ from lxml import etree
 
 
 MIN_AUTHOR_COUNT = 2
-AuthorName = namedtuple('AuthorName', 'initials surname full_name')
+AuthorName = namedtuple(
+    'AuthorName', 'forename initials surname full_name affiliation')
 
 UNICODE_TRANSLATION_TABLE = dict(
     (ord(char), None) for char in string.punctuation)
@@ -20,6 +21,7 @@ UNICODE_TRANSLATION_TABLE.update(dict(
 ASCII_TRANSLATION_TABLE = string.maketrans(
     string.punctuation + string.uppercase,
     ' ' * len(string.punctuation) + string.lower(string.uppercase))
+
 
 class AuthorCountException(Exception):
     pass
@@ -31,30 +33,28 @@ class PublicationTypeException(Exception):
 
 # XXX Need to update this to look for each author's affiliation
 # with the 2014 DTD
-def _process_authors(el, affiliations_el=None):
+def _process_authors(el):
     """
 
     """
     if not el:
         raise AuthorCountException
     el = el[0]
-    author_el = el.xpath('Author')
-    if len(author_el) < MIN_AUTHOR_COUNT:
+    author_elements = el.xpath('Author[@ValidYN="Y"')
+    if len(author_elements) < MIN_AUTHOR_COUNT:
         raise AuthorCountException
     authors = []
-    for a in author_el:
-        surname = a.xpath('string(LastName)')
-        forename = a.xpath('string(ForeName)')
-        # initials doesn't include the surname
-        initials = a.xpath('string(Initials)')
+    for author in author_elements:
+        forename = author.xpath('string(ForeName)')
+        # Note that initials doesn't include the surname
+        initials = author.xpath('string(Initials)')
+        surname = author.xpath('string(LastName)')
         full_name = "%s %s" % (forename, surname)
-        authors.append(AuthorName(initials, surname, full_name))
-    affiliations = []
-    if affiliations_el is not None and affiliations_el:
-        affiliations = [a.text for a in affiliations_el]
+        affiliation = author.xpath('string(Affiliation)')
+        authors.append(
+            AuthorName(forename, initials, surname, full_name, affiliation))
     return {'complete': True if el.get('CompleteYN') == 'Y' else False,
             'authors': authors,
-            'affiliations': affiliations,
             }
 
 
@@ -106,7 +106,7 @@ def _process_keywords(el, set_type):
 #   Personal Narratives
 #   Practice Guideline
 #
-# XXX For Abstracts, need to see how the author lists are determined. These
+# XXX For 'Abstracts', need to see how the author lists are determined. These
 # could be especially interesting or simply noisy
 #
 # Patents aren't indexed by Pubmed but could be interesting to include out-of
@@ -285,10 +285,7 @@ def parse_medline_xml_file(medline_xml):
         # Author names - note we're only interested in publications with at
         # least two authors
         try:
-            author_info = _process_authors(
-                citation.xpath('Article/AuthorList'),
-                # This function needs to change w/ 2014 DTD
-                affiliations_el=citation.xpath('Article/Affiliation'))
+            author_info = _process_authors(citation.xpath('Article/AuthorList'))
         except AuthorCountException:
             continue
 

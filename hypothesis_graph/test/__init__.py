@@ -3,35 +3,37 @@
 __init__.py - tools for testing Medline data parsing
 """
 import os
+from os import path
 
 from lxml import etree
 
 import parse_medline_data
 
 
+_2014_MEDLINE_FILES_DIRECTORY = path.join(
+    path.dirname(__file__), '../data/2014')
 MEDLINE_FILES = [
-    '../data/medline13n0033.xml.gz',
-    '../data/medline13n0073.xml',
-    '../data/medline13n0143.xml',
-    '../data/medline13n0236.xml',
-    '../data/medline13n0363.xml',
-    '../data/medline13n0438.xml',
-    '../data/medline13n0551.xml',
-    '../data/medline13n0701.xml',
-    '../data/medsamp2013.xml',
-    ]
-
-MEDLINE_FILES = [
-    os.path.join(os.path.dirname(__file__), p) for p in MEDLINE_FILES]
+    path.join(_2014_MEDLINE_FILES_DIRECTORY, p) for p in os.listdir(_2014_MEDLINE_FILES_DIRECTORY)]
 
 
-def is_valid_xml(medline_xml):
+def has_30k_or_fewer_records(medline_xml, parser=None, tree=None):
+    """ has_30k_or_fewer_records -> bool
+
+    Medline XML records contain at most 30k MedlineCitation elements.
+    This is a simple check for all new files.
+    """
+    pass
+
+
+def is_valid_xml(medline_xml, parser=None, tree=None):
     """ is_valid_xml -> bool
 
     Validates medline_xml using its internally referenced DTD.
     """
-    parser = etree.XMLParser(load_dtd=True, no_network=False)
-    tree = etree.parse(medline_xml, parser)
+    if parser is None:
+        parser = etree.XMLParser(load_dtd=True, no_network=False)
+    if tree is None:
+        tree = etree.parse(medline_xml, parser)
     dtd = tree.docinfo.externalDTD
     return dtd.validate(tree)
 
