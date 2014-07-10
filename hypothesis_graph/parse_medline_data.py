@@ -40,7 +40,7 @@ def _process_authors(el):
     if not el:
         raise AuthorCountException
     el = el[0]
-    author_elements = el.xpath('Author[@ValidYN="Y"')
+    author_elements = el.xpath('Author[@ValidYN="Y"]')
     if len(author_elements) < MIN_AUTHOR_COUNT:
         raise AuthorCountException
     authors = []
