@@ -40,7 +40,7 @@ DOWNLOADED_FILES_SCHEMA =\
            size INTEGER NOT NULL,
            record_name TEXT NOT NULL,
            filename TEXT NOT NULL,
-           unique_file_id TEXT NOT NULL,
+           unique_file_id TEXT NOT NULL UNIQUE,
            modification_date TEXT NOT NULL,
            observed_md5 TEXT NOT NULL,
            md5_verified INTEGER NOT NULL,
@@ -53,7 +53,7 @@ DOWNLOADED_FILES_SCHEMA =\
        CREATE TABLE md5_checksums (
            id INTEGER PRIMARY KEY,
            referenced_record TEXT NOT NULL,  -- Refers to nlm_archives
-           unique_file_id TEXT NOT NULL,
+           unique_file_id TEXT NOT NULL UNIQUE,
            md5_value TEXT NOT NULL,
            download_date TEXT NOT NULL,
            filename TEXT NOT NULL,
@@ -70,7 +70,7 @@ DOWNLOADED_FILES_SCHEMA =\
            id INTEGER PRIMARY KEY,
            filename TEXT NOT NULL,
            referenced_record TEXT,  -- Refers nlm_archives
-           unique_file_id TEXT NOT NULL,
+           unique_file_id TEXT NOT NULL UNIQUE,
            download_date TEXT NOT NULL
        );
     """
