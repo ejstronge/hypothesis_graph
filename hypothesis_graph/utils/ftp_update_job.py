@@ -21,89 +21,20 @@ import netrc
 from os import path
 import re
 import StringIO
-import sqlite3
+import sys
+import traceback
 import time
 
+from send_ses_message.send_smtp_ses_email import \
+    get_smtp_parameters, get_server_reference
+
+import ftp_update_db as ftp_db
 
 FTPConnectionParams = namedtuple(
     'FTPConnectionParams', 'host user account password')
 
 FTPFileParams = namedtuple(
     'FTPFileParams', 'modification_date size unique_file_id filename')
-
-# example - medline14n0746.xml.gz.md5
-MEDLINE_ARCHIVE_PATTERN = re.compile('medline\d{2}n\d{4}')
-
-DOWNLOADED_FILES_SCHEMA =\
-    """CREATE TABLE nlm_archives (
-           id INTEGER PRIMARY KEY,
-           size INTEGER NOT NULL,
-           record_name TEXT NOT NULL,
-           filename TEXT NOT NULL,
-           unique_file_id TEXT NOT NULL UNIQUE,
-           modification_date TEXT NOT NULL,
-           observed_md5 TEXT NOT NULL,
-           md5_verified INTEGER NOT NULL,
-           download_date TEXT NOT NULL,
-           download_location TEXT NOT NULL,
-           transferred_for_output INTEGER NOT NULL,  -- Was this archive made ready for rsync download?
-           downloaded_by_application INTEGER NOT NULL  -- Was this archive downloaded?
-       );
-
-       CREATE TABLE md5_checksums (
-           id INTEGER PRIMARY KEY,
-           referenced_record TEXT NOT NULL,  -- Refers to nlm_archives
-           unique_file_id TEXT NOT NULL UNIQUE,
-           md5_value TEXT NOT NULL,
-           download_date TEXT NOT NULL,
-           filename TEXT NOT NULL,
-           checksum_file_deleted INTEGER NOT NULL
-       );
-
-       /* archive_notes
-
-       NLM lists retracted papers and other miscellany in text or
-       html files with the same basename as the relevant archive (
-       e.g., medline14n01.xml and medline14n01.xml.notes.txt)
-       */
-       CREATE TABLE archive_notes (
-           id INTEGER PRIMARY KEY,
-           filename TEXT NOT NULL,
-           referenced_record TEXT,  -- Refers nlm_archives
-           unique_file_id TEXT NOT NULL UNIQUE,
-           download_date TEXT NOT NULL
-       );
-    """
-
-NEW_ARCHIVE_SQL =\
-    """INSERT INTO nlm_archives (
-            size, record_name, filename, unique_file_id, modification_date,
-            observed_md5, md5_verified, download_date, download_location,
-            transferred_for_output, downloaded_by_application
-            ) VALUES (
-                :size, :referenced_record, :filename, :unique_file_id,
-                :modification_date, :observed_md5, :md5_verified,
-                :download_date, :download_location,
-                :transferred_for_output, :downloaded_by_application);
-    """
-
-NEW_HASH_SQL =\
-    """INSERT INTO md5_checksums (
-            referenced_record, unique_file_id, md5_value,
-            download_date, filename, checksum_file_deleted
-            ) VALUES (
-                :referenced_record, :unique_file_id, :md5_value,
-                :download_date, :filename, :checksum_file_deleted
-                );
-    """
-
-NEW_NOTE_SQL =\
-    """INSERT INTO archive_notes (
-            filename, referenced_record, unique_file_id, download_date
-            ) VALUES (
-                :filename, :referenced_record, :unique_file_id,
-                :download_date);
-    """
 
 
 """
@@ -166,81 +97,25 @@ def get_file_listing(connection, server_dir, skip_patterns=None):
         yield listing
 
 
-def initialize_download_database_connection(db_file):
-    """
-    Return a connection to `db_file`. If the file does not exist
-    it is created and intialized with `DOWNLOADED_FILES_SCHEMA`.
-    """
-    if not path.exists(db_file):
-        db_con = sqlite3.connect(db_file)
-        db_con.executescript(DOWNLOADED_FILES_SCHEMA)
-        db_con.commit()
-    else:
-        db_con = sqlite3.connect(db_file)
-    db_con.text_factory = str
-    db_con.row_factory = sqlite3.Row
-    return db_con
-
-
-def get_downloaded_file_unique_ids():
-    """
-    Returns a set of identifers for previously downloaded files.
-    """
-    db_con = DOWNLOADED_FILES_DATABASE_CONNECTION
-    downloaded_files = {row['unique_file_id'] for row in db_con.execute(
-        "SELECT unique_file_id FROM nlm_archives")}
-    downloaded_files.union({row['unique_file_id'] for row in db_con.execute(
-        "SELECT unique_file_id FROM md5_checksums")})
-    downloaded_files.union({row['unique_file_id'] for row in db_con.execute(
-        "SELECT unique_file_id FROM archive_notes")})
-    return downloaded_files
-
-
-def record_downloads(downloads_list):
-    """
-    Update downloaded files database with files from downloads_list.
-
-    `downloads_list` is a collection of dictionaries with keys from
-    `FTPFileParams`, augmented with the key `download_date`.
-    """
-    download_types = {'archive': [], 'hash': [], 'note': []}
-    for download in downloads_list:
-        referenced_record = MEDLINE_ARCHIVE_PATTERN.match(download['filename'])
-        if referenced_record is not None:
-            download['referenced_record'] = referenced_record.group(0)
-        else:
-            # This can only happen for notes - see the DB schema
-            download['referenced_record'] = None
-        filename = download['filename']
-        if filename.endswith('.xml.gz'):
-            download.update(md5_verified=0, transferred_for_output=0,
-                            downloaded_by_application=0)
-            download_types['archive'].append(download)
-        elif filename.endswith('.xml.gz.md5'):
-            # XXX Should delete these hash files eventually
-            with open(downloads_list['output_path']) as hash_file:
-                md5_value = hash_file.read()
-            download.update(md5_value=md5_value, checksum_file_deleted=0)
-            download_types['hash'].append(download)
-        else:
-            download_types['note'].append(download)
-    db_con = DOWNLOADED_FILES_DATABASE_CONNECTION
-    db_con.executemany(NEW_ARCHIVE_SQL, download_types['archive'])
-    # TODO Enforce foreign key constraints on hashes and notes
-    db_con.executemany(NEW_HASH_SQL, download_types['hash'])
-    db_con.executemany(NEW_NOTE_SQL, download_types['note'])
-    db_con.commit()
-
-
-def retrieve_nlm_files(connection, server_dir, output_dir, limit=0):
+def retrieve_nlm_files(
+        connection, server_dir, output_dir, db_con, limit=0):
     """
     Download new files from path `server_dir` to `output_dir`.
     Only retrieve `limit` files if limit is greater than 0.
 
     `connection` is an ftplib.FTP object.
+
+    Returns a dict with the fields from FTPFileParams and
+    the following keys:
+
+        download_date
+        observed_md5 - calculated md5 has for the referenced file
+        output_path - path on local machine for the referenced file
     """
     connection.cwd(server_dir)
-    downloaded_files = get_downloaded_file_unique_ids()
+    # Not pretty, but I'm just getting a list of all the IDs I've
+    # already downloaded. This shouldn't ever exceed a few thousand
+    downloaded_files = ftp_db.get_downloaded_file_unique_ids(db_con)
     retrieved_files = []
     output_dir = path.abspath(output_dir)
     try:
@@ -266,28 +141,47 @@ def retrieve_nlm_files(connection, server_dir, output_dir, limit=0):
             retrieved_files.append(file_info_dict)
     finally:
         # Record successful downloads even after a download failure
-        record_downloads(retrieved_files)
-    return 'Success'
+        ftp_db.record_downloads(retrieved_files, db_con)
+    return retrieved_files
 
 
-if __name__ == '__main__':
+def send_smtp_email(_from, to, msg, server_cfg):
+    """Send `msg` to email address `to`, using the parameters
+       in server_cfg.
+    """
+    smtp_params = get_smtp_parameters(server_cfg)
+    smtp_con = get_server_reference(*smtp_params)
 
+    smtp_con.sendmail(
+        _from, to,
+        """From: {from}\r\n
+           To: {to}\r\n
+
+           {msg}
+        """ % {'from': _from, 'to': to, 'msg': msg})
+
+
+def handle_args():
+    """Parse command-line arguments to this script"""
     parser = argparse.ArgumentParser(
         description="""Script to download new files from the NLM public
                        FTP server.
                     """)
-
-    parser.add_argument(
-        'server_data_dir',
-        help='Directory containing desired files on the NLM FTP server')
-
+    # Server settings
     parser.add_argument(
         '-n', '--netrc', default='~/.netrc',
         help="""netrc file containing login parameters for the NLM
                 server. See `man 5 netrc` for details on generating this
                 file.
              """)
+    parser.add_argument(
+        'server_data_dir',
+        help='Directory containing desired files on the NLM FTP server')
+    parser.add_argument(
+        '-l', '--limit', type=int, default=0,
+        help='Only download LIMIT files.')
 
+    # Download settings
     parser.add_argument(
         '-d', '--download_database', default='~/.ftp_download_db',
         help='Path to SQLite database detailing past downloads')
@@ -295,34 +189,65 @@ if __name__ == '__main__':
         '-o', '--output_dir', default='~/medline_data',
         help='Directory where downloads will be saved')
     parser.add_argument(
-        '-l', '--limit', type=int, default=0,
-        help='Only download LIMIT files.')
-
-    parser.add_argument(
         '-x', '--export_dir', default='~/medline_data_exports',
         help="""Directory where data to be retrieved by the
                 `hypothesis_graph application server are staged.
              """)
+    # Sending debug emails
+    parser.add_argument(
+        '--email_debugging', default=False, action='store_true',
+        help="Send debugging emails. Defaults to FALSE.")
+    parser.add_argument(
+        '--from_email', required=False, help="FROM field for debugging emails")
+    parser.add_argument(
+        '--to_email', required=False, help="TO field for debugging emails")
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def main():
+    """Connect to the NLM server and download all new files"""
+    args = handle_args()
+
+    # FTP connection
     NLM_NETRC = netrc.netrc(file=path.expanduser(args.netrc))
     assert len(NLM_NETRC.hosts.keys()
                ) == 1, "The netrc file should contain only one record"
     for server, params in NLM_NETRC.hosts.items():
         FTP_PARAMS = FTPConnectionParams(*([server] + list(params)))
-
-    FTP_CONNECTION = ftplib.FTP(
+    ftp_connection = ftplib.FTP(
         host=FTP_PARAMS.host, user=FTP_PARAMS.user, passwd=FTP_PARAMS.password)
-    DOWNLOADED_FILES_DATABASE_CONNECTION =\
-        initialize_download_database_connection('test.db')
 
-    # TODO Wrap this in an exception handler that sends an email
-    # on failure
-    assert retrieve_nlm_files(connection=FTP_CONNECTION,
-                              server_dir=args.server_data_dir,
-                              output_dir=args.output_dir,
-                              limit=args.limit) == 'Success'
+    def get_exception_text():
+        return traceback.print_tb(sys.exc_info[2])
+    try:
+        retrieve_nlm_files(
+            connection=ftp_connection, server_dir=args.server_data_dir,
+            output_dir=args.output_dir, limit=args.limit,
+            db_con=ftp_db.initialize_download_database_connection('test.db'))
+    except Exception as e:
+        if args.email_debugging:
+            send_smtp_email(
+                args.from_email, args.to_email, server_cfg=args.smtp_cfg,
+                msg="""
+                At {date}, attempt to download new files from
+                {server_dir} failed.
+
+                Exception text: {exception_text}
+                Traceback text: {traceback_text}
+                """.format(date=time.strftime('%Y%m%d%H%M%S'),
+                           server_dir=args.server_data_dir,
+                           exception_text=e.args,
+                           traceback=get_exception_text()))
+        raise
+    success_email = "Downloaded all new files from %s" % args.server_data_dir
 
     # TODO Move the downloaded files to the export directory and send an
     # email when this is done
+
+    # ftp_db.record_files_to_export()
+    # ftp_db.check_exported_file_directory()
+
+
+if __name__ == '__main__':
+    main()
