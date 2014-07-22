@@ -6,7 +6,7 @@
    Script for retrieving Medline records from the NLM FTP server.  Run
    this as a cron job.
 
-   NOTE: This script requires that the file ~/.netrc exist and contain
+   NOTE: This script requires that a netrc file exist and contain
    only an entry for the NLM public server. See `man 5 netrc` for details
    on the netrc file format.
 
