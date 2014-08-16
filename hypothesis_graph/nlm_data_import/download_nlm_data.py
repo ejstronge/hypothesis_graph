@@ -22,7 +22,7 @@ import os
 from os import path
 import re
 import shutil
-import StringIO
+import io
 import traceback
 import time
 
@@ -79,7 +79,7 @@ def get_file_listing(connection, server_dir, skip_patterns=None):
     # Eventually, should try using ftplib sendcmd to change mode before
     # requesting a test file and reset the mode before requesting a
     # binary file.
-    file_listing = StringIO.StringIO()
+    file_listing = io.StringIO()
     connection.retrbinary('MLSD %s' % server_dir, file_listing.write)
     file_listing.seek(0)
 
