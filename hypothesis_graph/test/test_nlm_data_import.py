@@ -135,30 +135,50 @@ class TestNLMDownloader(unittest.TestCase):
     Test utility functions used in the NLM downloading script.
     """
 
+    TEST_FTP_LINES = (
+        'modify=20131125174213;perm=adfr;size=24847843;'
+        'type=file;unique=4600001UE9FE;UNIX.group=183;UNIX.mode=0644;'
+        'UNIX.owner=505; medline14n0745.xml.gz',
+
+        'modify=20131125174556;perm=adfr;size=63;type=file;'
+        'unique=4600001UEA02;UNIX.group=183;UNIX.mode=0644;UNIX.owner=505;'
+        ' medline14n0002.xml.gz.md5')
+
+    PARSED_TEST_LINES = (
+        # A tuple with fields 'modify', 'size', 'unique' and filename.
+        # The first fields are from the key-value portion of the
+        # test_ftp_lines elements; filename is the string separated by a
+        # space from key-value portion
+        ('20131125174213', '24847843', '4600001UE9FE',
+            'medline14n0745.xml.gz'),
+        ('20131125174556', '63', '4600001UEA02',
+            'medline14n0002.xml.gz.md5')
+        )
+
+    FTP_LINES_TO_SKIP = (
+        'modify=20131125174213;perm=adfr;size=24847843;'
+        'type=file;unique=4600001UE9FE;UNIX.group=183;UNIX.mode=0644;'
+        'UNIX.owner=505; archive.stats.html',
+
+        'modify=20131125174556;perm=adfr;size=63;type=file;'
+        'unique=4600001UEA02;UNIX.group=183;UNIX.mode=0644;UNIX.owner=505;'
+        ' test.dat')
+
+    def test_get_file_listing(self):
+
+        self.assertListEqual(
+            [],
+            list(downloader.get_file_listing(self.FTP_LINES_TO_SKIP)))
+
+        self.assertListEqual(
+            list(self.PARSED_TEST_LINES),
+            list(downloader.get_file_listing(self.TEST_FTP_LINES)))
+
     def test_parse_mlsd(self):
-        """ Test parsing of machine-readable FTP directory listing
+        """Test parsing of machine-readable FTP directory listing
         """
 
-        test_ftp_lines = (
-            'modify=20131125174213;perm=adfr;size=24847843;'
-            'type=file;unique=4600001UE9FE;UNIX.group=183;UNIX.mode=0644;'
-            'UNIX.owner=505; medline14n0745.xml.gz',
-
-            'modify=20131125174556;perm=adfr;size=63;type=file;'
-            'unique=4600001UEA02;UNIX.group=183;UNIX.mode=0644;UNIX.owner=505;'
-            ' medline14n0002.xml.gz.md5')
-
-        parsed_test_lines = (
-            # A tuple with fields 'modify', 'size', 'unique' and filename.
-            # The first fields are from the key-value portion of the
-            # test_ftp_lines elements; filename is the string separated by a
-            # space from key-value portion
-            ('20131125174213', '24847843', '4600001UE9FE',
-                'medline14n0745.xml.gz'),
-            ('20131125174556', '63', '4600001UEA02',
-                'medline14n0002.xml.gz.md5')
-            )
-
-        for test_line, parsed_line in zip(test_ftp_lines, parsed_test_lines):
+        for test_line, parsed_line in zip(self.TEST_FTP_LINES,
+                                          self.PARSED_TEST_LINES):
             self.assertTupleEqual(
                 downloader.parse_mlsd(test_line), parsed_line)

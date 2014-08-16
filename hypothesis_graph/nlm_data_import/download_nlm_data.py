@@ -63,8 +63,8 @@ def parse_mlsd(line):
         metadata['modify'], metadata['size'], metadata['unique'], filename)
 
 
-def get_file_listing(connection, server_dir, skip_patterns=None):
-    """Returns tuples of file information for each file in server_dir
+def get_file_listing(ftp_files, skip_patterns=None):
+    """Returns tuples of file information for each file in ftp_files
 
     Directories are automatically removed from this listing (see
     `parse_mlsd`).
@@ -72,28 +72,16 @@ def get_file_listing(connection, server_dir, skip_patterns=None):
     `skip_patterns` can be a collection of regex patterns that match
     undesired files. It defaults to `('stats.html$', '.dat$')`.
     """
-    # This should definitely be done line-wise but ftplib complains when
-    # the NLM server changes mode from BINARY to ASCII and back again.
-    # Using StringIO is a workaround.
-    #
-    # Eventually, should try using ftplib sendcmd to change mode before
-    # requesting a test file and reset the mode before requesting a
-    # binary file.
-    file_listing = io.StringIO()
-    connection.retrbinary('MLSD %s' % server_dir, file_listing.write)
-    file_listing.seek(0)
-
     if skip_patterns is None:
-        skip_patterns = (r'stats\.html$', r'\.dat$')
+        skip_patterns = (r'.*stats\.html$', r'.*\.dat$')
     skip_patterns = tuple(re.compile(p) for p in skip_patterns)
 
-    for line in file_listing.readlines():
+    for line in ftp_files:
         listing = parse_mlsd(line)
         if listing is None:
             continue
-        for pattern in skip_patterns:
-            if pattern.match(listing.filename) is not None:
-                continue
+        if any(p.match(listing.filename) for p in skip_patterns):
+            continue
         yield listing
 
 
@@ -119,8 +107,19 @@ def retrieve_nlm_files(
     retrieved_files = []
     output_dir = path.abspath(output_dir)
     try:
+        # Parsing the file listing should be done line-wise but ftplib
+        # complains when the NLM server changes mode from BINARY to
+        # ASCII and back again.  Using StringIO is a workaround.
+        #
+        # Eventually, should try using ftplib sendcmd to change mode
+        # before requesting a test file and reset the mode before
+        # requesting a binary file.
+        file_listing = io.StringIO()
+        connection.retrbinary('MLSD %s' % server_dir, file_listing.write)
+        file_listing.seek(0)
+
         for i, file_info in enumerate(
-                get_file_listing(connection, server_dir)):
+                get_file_listing(file_listing.readlines(), server_dir)):
             if limit > 0 and i > limit:
                 break
             if file_info.unique_file_id in local_nlm_records:
