@@ -150,9 +150,9 @@ class TestNLMDownloader(unittest.TestCase):
         # test_ftp_lines elements; filename is the string separated by a
         # space from key-value portion
         ('20131125174213', '24847843', '4600001UE9FE',
-            'medline14n0745.xml.gz'),
+            'medline14n0745.xml.gz', '', '', ''),
         ('20131125174556', '63', '4600001UEA02',
-            'medline14n0002.xml.gz.md5')
+            'medline14n0002.xml.gz.md5', '', '', '')
         )
 
     FTP_LINES_TO_SKIP = (

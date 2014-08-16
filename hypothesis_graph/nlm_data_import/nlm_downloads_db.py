@@ -55,6 +55,8 @@ def record_downloads(downloads_list, db_con):
     """
     download_types = {'archive': [], 'hash': [], 'note': []}
     for download in downloads_list:
+        download = vars(download)
+
         referenced_record = MEDLINE_ARCHIVE_PATTERN.match(download['filename'])
         if referenced_record is not None:
             download['referenced_record'] = referenced_record.group(0)
@@ -62,16 +64,19 @@ def record_downloads(downloads_list, db_con):
             # This can only happen for notes - see the DB schema
             download['referenced_record'] = None
         filename = download['filename']
+
         if filename.endswith('.xml.gz'):
             download.update(md5_verified=0, transferred_for_output=0,
                             downloaded_by_application=0)
             download_types['archive'].append(download)
+
         elif filename.endswith('.xml.gz.md5'):
             # XXX Should delete these hash files eventually
-            with open(downloads_list['output_path']) as hash_file:
+            with open(download['output_path']) as hash_file:
                 md5_value = hash_file.read()
             download.update(md5_value=md5_value, checksum_file_deleted=0)
             download_types['hash'].append(download)
+
         else:
             download_types['note'].append(download)
     db_con.executemany(NEW_ARCHIVE_SQL, download_types['archive'])

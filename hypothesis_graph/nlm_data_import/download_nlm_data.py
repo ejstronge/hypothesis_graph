@@ -36,7 +36,9 @@ FTPConnectionParams = namedtuple(
     'FTPConnectionParams', 'host user account password')
 
 FTPFileParams = namedtuple(
-    'FTPFileParams', 'modification_date size unique_file_id filename')
+    'FTPFileParams',
+    'modification_date size unique_file_id filename download_date'
+    ' observed_md5 output_path')
 
 
 # Examples of files from an mlsd listings. There's one record per line.
@@ -60,7 +62,8 @@ def parse_mlsd(line):
     if metadata['type'] != 'file':
         return
     return FTPFileParams(
-        metadata['modify'], metadata['size'], metadata['unique'], filename)
+        metadata['modify'], metadata['size'], metadata['unique'],
+        filename, '', '', '')
 
 
 def get_file_listing(ftp_files, skip_patterns=None):
@@ -131,12 +134,11 @@ def retrieve_nlm_files(
                 new_file.seek(0)
                 observed_md5 = hashlib.md5()
                 observed_md5.update(new_file.read())
-            file_info_dict = file_info._asdict()
-            file_info_dict.update(
+            file_info._replace(
                 download_date=time.strftime('%Y%m%d%H%M%S'),
                 observed_md5=observed_md5.digest(),
                 output_path=output_path)
-            retrieved_files.append(file_info_dict)
+            retrieved_files.append(file_info)
     finally:
         # Record successful downloads even after a download failure
         ftp_db.record_downloads(retrieved_files, db_con)
@@ -165,10 +167,10 @@ def move_files_for_export(exports_list, export_dir, db_con):
     """
     for export in exports_list:
         shutil.move(
-            export['output_path'],
-            path.join(export_dir, path.basename(export['output_path'])))
+            export.output_path,
+            path.join(export_dir, path.basename(export.output_path)))
     ftp_db.record_files_to_export(
-        [e['referenced_record'] for e in exports_list], db_con)
+        [e.referenced_record for e in exports_list], db_con)
 
 
 def handle_args():
@@ -254,7 +256,7 @@ def main():
         success_email_text += """
 
             Moved the following files to the export directory:\n%s
-            """ % '\n'.join([f['filename'] for f in retrieved_files])
+            """ % '\n'.join([f.filename for f in retrieved_files])
 
         send_smtp_email(
             args.from_email, args.to_email, server_cfg=args.smtp_cfg,
