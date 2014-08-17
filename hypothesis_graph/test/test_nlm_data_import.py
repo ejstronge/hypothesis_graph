@@ -28,40 +28,42 @@ class TestNLMDatabase(unittest.TestCase):
         observed_md5 md5_verified download_date download_location
         transferred_for_output export_location downloaded""")
 
-    nlm_archive_test_records = [
-        NLMArchiveData(*fields) for fields in
-        (
-            (93, 'nlm1', 'nlm1.xml.tar.gz', 'unique1', '20140731', 'hash1', 0, '20140731', 'downloads/', 0, None, 0),
-            (92, 'nlm2', 'nlm2.xml.tar.gz', 'unique2', '20140722', 'hash2', 0, '20240732', 'downloads/', 0, None, 0),
-            (93, 'nlm3', 'nlm3.xml.tar.gz', 'unique3', '20140723', 'hash3', 0, '30340733', 'downloads/', 0, None, 0),
-            (94, 'nlm4', 'nlm4.xml.tar.gz', 'unique4', '20140714', 'hash4', 0, '40440744', 'downloads/', 0, None, 0),
-            (95, 'nlm5', 'nlm5.xml.tar.gz', 'unique5', '20150705', 'hash5', 0, '50550755', 'downloads/', 0, None, 0),
-        )]
-
     NLMHashData = namedtuple(
         'NLMHashData',
         """referenced_record, unique_file_id, md5_value download_date
         filename checksum_file_deleted""")
-    nlm_hash_test_records = [
-        NLMHashData(*fields) for fields in
-        (
-            ('nlm1', 'unique-hash1', 'hash1', '20140731', 'nlm1.xml.tar.gz.md5', 0),
-            ('nlm2', 'unique-hash2', 'hash2', '20140702', 'nlm2.xml.tar.gz.md5', 0),
-            ('nlm3', 'unique-hash3', 'hash3', '30140703', 'nlm3.xml.tar.gz.md5', 0),
-            ('nlm4', 'unique-hash4', 'hash4', '40140714', 'nlm4.xml.tar.gz.md5', 0),
-            ('nlm5', 'unique-hash5', 'hash5', '20140715', 'nlm5.xml.tar.gz.md5', 0),
-        )]
 
     NLMNoteData = namedtuple(
         'NLMNoteData',
         'filename referenced_record unique_file_id download_date')
-    nlm_note_test_records = [
-        NLMNoteData(*fields) for fields in
-        (
-            ('special-note.txt', None, 'repeated-note1', '20140731'),
-            ('nlm1-retracted.txt', 'nlm1', 'unique-note1', '20140731'),
-            ('nlm4-revised.txt', 'nlm4', 'unique-note4', '20140704'),
-        )]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.nlm_archive_test_records = [
+            self.NLMArchiveData(*fields) for fields in
+            (
+                (93, 'nlm1', 'nlm1.xml.tar.gz', 'unique1', '20140731', 'hash1', 0, '20140731', 'downloads/', 0, None, 0),
+                (92, 'nlm2', 'nlm2.xml.tar.gz', 'unique2', '20140722', 'hash2', 0, '20240732', 'downloads/', 0, None, 0),
+                (93, 'nlm3', 'nlm3.xml.tar.gz', 'unique3', '20140723', 'hash3', 0, '30340733', 'downloads/', 0, None, 0),
+                (94, 'nlm4', 'nlm4.xml.tar.gz', 'unique4', '20140714', 'hash4', 0, '40440744', 'downloads/', 0, None, 0),
+                (95, 'nlm5', 'nlm5.xml.tar.gz', 'unique5', '20150705', 'hash5', 0, '50550755', 'downloads/', 0, None, 0),
+            )]
+        self.nlm_hash_test_records = [
+            self.NLMHashData(*fields) for fields in
+            (
+                ('nlm1', 'unique-hash1', 'hash1', '20140731', 'nlm1.xml.tar.gz.md5', 0),
+                ('nlm2', 'unique-hash2', 'hash2', '20140702', 'nlm2.xml.tar.gz.md5', 0),
+                ('nlm3', 'unique-hash3', 'hash3', '30140703', 'nlm3.xml.tar.gz.md5', 0),
+                ('nlm4', 'unique-hash4', 'hash4', '40140714', 'nlm4.xml.tar.gz.md5', 0),
+                ('nlm5', 'unique-hash5', 'hash5', '20140715', 'nlm5.xml.tar.gz.md5', 0),
+            )]
+        self.nlm_note_test_records = [
+            self.NLMNoteData(*fields) for fields in
+            (
+                ('special-note.txt', None, 'repeated-note1', '20140731'),
+                ('nlm1-retracted.txt', 'nlm1', 'unique-note1', '20140731'),
+                ('nlm4-revised.txt', 'nlm4', 'unique-note4', '20140704'),
+            )]
 
     def setUp(self):
         """Make an in-memory database connection and load the downloads
