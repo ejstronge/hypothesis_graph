@@ -9,6 +9,9 @@ Test suite for the archive downloading module
 Available under the GPLv3 - see LICENSE for details.
 """
 from collections import namedtuple
+import os
+import shutil
+import tempfile
 import unittest
 
 from ..nlm_data_import import nlm_downloads_db as downloads_db
@@ -62,11 +65,19 @@ class TestNLMDatabase(unittest.TestCase):
 
     def setUp(self):
         """Make an in-memory database connection and load the downloads
-        schema.
+        schema. Also move to a temporary directory
         """
         self.test_db = downloads_db.initialize_database_connection(':memory:')
+        self.temp_dir = tempfile.mkdtemp()
 
-    def generate_records(self):
+        self.last_dir = os.getcwd()
+        os.chdir(self.temp_dir)
+
+    def tearDown(self):
+        os.chdir(self.last_dir)
+        shutil.rmtree(self.temp_dir)
+
+    def populate_test_db(self):
         """ Insert test records into the test database.
         """
         self.test_db.executemany(
@@ -75,6 +86,33 @@ class TestNLMDatabase(unittest.TestCase):
             downloads_db.NEW_HASH_SQL, self.nlm_hash_test_records)
         self.test_db.executemany(
             downloads_db.NEW_NOTE_SQL, self.nlm_note_test_records)
+
+    def generate_ftp_file_params(self):
+        """Create namedtuples describing a downloaded file
+
+        Returns a sequence of download_nlm_data.FTPFileParams
+        """
+        file_data = (
+            ('20131125174213', '24847843', '4600001UE9FE',
+                'medline14n0745.xml.gz', '20140702134531',
+                '745 hash', './medline14n0745.xml.gz'),
+            ('20131125174313', '24847843', '4600001UE9FF',
+                'medline14n0749.xml.gz', '20140702134531',
+                '749 hash', './medline14n0749.xml.gz'),
+            ('20131125174556', '63', '4600001UEA02',
+                'medline14n0745.xml.gz.md5', '20140702134531',
+                '745 hash hash', './medline14n0745.xml.gz.md5'),
+            ('20131125174559', '563', '4400001UEA02',
+                'medline14n0002.important.info', '20140702134531',
+                '002 note hash', './medline14n0002.important.info'),
+            )
+
+        # The application will expect the hash files to be downloaded
+        # already
+        with open('medline14n0745.xml.gz.md5', 'w') as test_hash_file:
+            test_hash_file.write('745 hash')
+
+        return [downloader.FTPFileParams(*d) for d in file_data]
 
     def test_insert_nlm_archive(self):
         """Test insertion of new nlm archive files to the downloads
@@ -91,7 +129,8 @@ class TestNLMDatabase(unittest.TestCase):
             'download_date': '20140702134531',
             'download_location': 'downloads',
             'transferred_for_output': 0,
-            'export_location': 'exports',
+            'output_path': 'exports',
+            'export_location': '',
             'downloaded_by_application': 0})
         self.test_db.commit()
 
@@ -117,7 +156,7 @@ class TestNLMDatabase(unittest.TestCase):
         """Test whether we correctly identify all the unique file
         hashes present in the database.
         """
-        self.generate_records()
+        self.populate_test_db()
 
         unique_ids = {record[3] for record in self.nlm_archive_test_records}
         for record_set in (self.nlm_hash_test_records,
@@ -128,6 +167,13 @@ class TestNLMDatabase(unittest.TestCase):
         self.assertSetEqual(
             downloads_db.get_downloaded_file_unique_ids(self.test_db),
             unique_ids)
+
+    def test_record_downloads(self):
+        """Test whether we correctly update the downloads database
+        with newly downloaded files.
+        """
+        records = self.generate_ftp_file_params()
+        downloads_db.record_downloads(records, self.test_db)
 
 
 class TestNLMDownloader(unittest.TestCase):

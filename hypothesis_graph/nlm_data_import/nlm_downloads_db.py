@@ -57,6 +57,7 @@ def record_downloads(downloads_list, db_con):
     for download in downloads_list:
         download = vars(download)
 
+        download['export_location'] = ''
         referenced_record = MEDLINE_ARCHIVE_PATTERN.match(download['filename'])
         if referenced_record is not None:
             download['referenced_record'] = referenced_record.group(0)
@@ -169,7 +170,7 @@ NEW_ARCHIVE_SQL = """
 
         VALUES (:size, :referenced_record, :filename, :unique_file_id,
             :modification_date, :observed_md5, :md5_verified,
-            :download_date, :download_location, :transferred_for_output,
+            :download_date, :output_path, :transferred_for_output,
             :export_location, :downloaded_by_application);
     """
 
